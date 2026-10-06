@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useSocket } from '../hooks/useSocket';
+import soundEngine from '../utils/audio';
 
 const GameContext = createContext(null);
 
@@ -13,16 +14,25 @@ export function GameProvider({ children }) {
   });
 
   // Authoritative Room & Game States
-  const [currentRoom, setCurrentRoom] = useState(null);
+  const [currentRoom, setCurrentRoom] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('doodlz_room_data');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [roundState, setRoundState] = useState({
     round: 1,
     totalRounds: 3,
     drawerId: null,
     drawerName: '',
     isDrawer: false,
-    secretWord: null, // Only non-null if isDrawer === true
+    secretWord: null,
     wordHint: '',
   });
+
   const [timeLeft, setTimeLeft] = useState(60);
   const [messages, setMessages] = useState([]);
   const [standings, setStandings] = useState([]);
@@ -35,7 +45,29 @@ export function GameProvider({ children }) {
     }
   }, [playerName]);
 
-  // Real-Time Socket Event Subscriptions
+  // Sync room with sessionStorage for seamless page refresh recovery
+  useEffect(() => {
+    if (currentRoom) {
+      sessionStorage.setItem('doodlz_room_data', JSON.stringify(currentRoom));
+    } else {
+      sessionStorage.removeItem('doodlz_room_data');
+    }
+  }, [currentRoom]);
+
+  // Automatic Reconnection / State Hydration on page refresh
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+    const savedRoomId = currentRoom?.id;
+    if (savedRoomId && playerName) {
+      socket.emit('room:get', { roomId: savedRoomId }, (res) => {
+        if (res?.success && res.room) {
+          setCurrentRoom(res.room);
+        }
+      });
+    }
+  }, [socket, isConnected]);
+
+  // Real-Time Socket Event Subscriptions & Procedural Audio Triggers
   useEffect(() => {
     if (!socket) return;
 
@@ -52,6 +84,7 @@ export function GameProvider({ children }) {
 
     // Game lifecycle: Round start
     const onRoundStart = (data) => {
+      soundEngine.playRoundStart();
       setRoundResult(null);
       setRoundState({
         round: data.round,
@@ -68,10 +101,14 @@ export function GameProvider({ children }) {
     // Synchronized server countdown ticks
     const onTimerTick = ({ timeLeft: serverTime }) => {
       setTimeLeft(serverTime);
+      if (serverTime <= 5 && serverTime > 0) {
+        soundEngine.playTimerTick();
+      }
     };
 
-    // Correct guess announcement
+    // Correct guess announcement & audio celebration
     const onGuessCorrect = ({ playerName: guesserName, points, players }) => {
+      soundEngine.playCorrect();
       if (currentRoom) {
         setCurrentRoom((prev) => (prev ? { ...prev, players } : prev));
       }
@@ -210,6 +247,7 @@ export function GameProvider({ children }) {
       if (socket && roomId) {
         socket.emit('room:leave', { roomId });
       }
+      sessionStorage.removeItem('doodlz_room_data');
       setCurrentRoom(null);
     },
     [socket]

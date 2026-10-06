@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
+import { useToast } from '../components/common/Toast';
 
 const AVATAR_COLORS = [
   '#6366F1', '#EC4899', '#06B6D4', '#10B981',
@@ -30,6 +31,7 @@ export function Room() {
     leaveRoom,
     socket,
   } = useGame();
+  const { addToast } = useToast();
 
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -48,6 +50,7 @@ export function Room() {
     if (!socket) return;
 
     const onGameStarted = () => {
+      addToast('Game match is starting!', 'info');
       navigate(`/game/${roomId}`);
     };
 
@@ -55,7 +58,7 @@ export function Room() {
     return () => {
       socket.off('game:started', onGameStarted);
     };
-  }, [socket, roomId, navigate]);
+  }, [socket, roomId, navigate, addToast]);
 
   if (!currentRoom) {
     return null;
@@ -68,12 +71,15 @@ export function Room() {
   const handleCopyCode = () => {
     navigator.clipboard.writeText(currentRoom.id);
     setCopiedCode(true);
+    addToast(`Room code ${currentRoom.id} copied to clipboard!`, 'success');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/lobby?mode=join&code=${currentRoom.id}`);
+    const inviteLink = `${window.location.origin}/lobby?mode=join&code=${currentRoom.id}`;
+    navigator.clipboard.writeText(inviteLink);
     setCopiedLink(true);
+    addToast('Invite link copied to clipboard!', 'success');
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
@@ -84,11 +90,13 @@ export function Room() {
     setStarting(false);
     if (result?.error) {
       setStartError(result.error);
+      addToast(result.error, 'error');
     }
   };
 
   const handleLeaveRoom = () => {
     leaveRoom(currentRoom.id);
+    addToast('Left the room.', 'info');
     navigate('/lobby');
   };
 
