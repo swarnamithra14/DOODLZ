@@ -1,142 +1,180 @@
-import React, { useState, useEffect } from 'react';
-import { Palette, Play, Server, Database, Radio, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Palette,
+  Play,
+  Users,
+  Timer,
+  MessageSquare,
+  Trophy,
+  HelpCircle,
+  X,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  CheckCircle2
+} from 'lucide-react';
 import { useGame } from '../context/GameContext';
-import { fetchHealthStatus } from '../services/api';
 
 export function Home() {
-  const { isConnected, socketId, latency, triggerPing } = useGame();
-  const [healthData, setHealthData] = useState(null);
-  const [loadingHealth, setLoadingHealth] = useState(false);
-  const [pingTesting, setPingTesting] = useState(false);
-
-  const loadHealth = async () => {
-    setLoadingHealth(true);
-    try {
-      const data = await fetchHealthStatus();
-      setHealthData(data);
-    } catch (err) {
-      console.warn('Failed to fetch backend health status:', err.message);
-      setHealthData({ error: err.message });
-    } finally {
-      setLoadingHealth(false);
-    }
-  };
-
-  useEffect(() => {
-    loadHealth();
-  }, [isConnected]);
-
-  const handleTestPing = async () => {
-    setPingTesting(true);
-    await triggerPing();
-    setPingTesting(false);
-  };
+  const { isConnected, latency } = useGame();
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
 
   return (
     <main className="main-content">
-      <section className="hero-section">
-        <div className="hero-tag">
-          <Palette size={14} />
+      {/* Hero Section */}
+      <section className="hero-wrapper">
+        <div className="hero-pill">
+          <Sparkles size={14} />
           <span>Real-Time Multiplayer Canvas</span>
         </div>
-        <h1 className="hero-title">
-          Draw. Guess. <span style={{ color: 'var(--accent-primary)' }}>Repeat.</span>
+
+        <h1 className="hero-title-main">
+          Draw. Guess. <span className="hero-gradient">Repeat.</span>
         </h1>
-        <p className="hero-subtitle">
-          DOODLZ is a real-time multiplayer drawing and guessing platform powered by an authoritative
-          Node.js backend, Socket.IO rooms, and high-performance HTML5 canvas synchronization.
+
+        <p className="hero-lead">
+          Draw it. Your friends guess it. Race the authoritative clock.
+          A modern, high-performance drawing arena built for real-time multiplayer excitement.
         </p>
 
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button className="btn btn-primary" onClick={handleTestPing} disabled={pingTesting}>
-            <Radio size={18} />
-            <span>{pingTesting ? 'Measuring Ping...' : 'Test Real-Time Socket Ping'}</span>
+        <div className="hero-actions">
+          <Link to="/lobby?mode=create" className="btn btn-primary btn-lg">
+            <Play size={18} />
+            <span>Create Game</span>
+          </Link>
+          <Link to="/lobby?mode=join" className="btn btn-secondary btn-lg">
+            <Users size={18} />
+            <span>Join Game</span>
+          </Link>
+          <button
+            className="btn btn-secondary btn-lg"
+            onClick={() => setShowHowToPlay(true)}
+          >
+            <HelpCircle size={18} />
+            <span>How to Play</span>
           </button>
-          <button className="btn btn-secondary" onClick={loadHealth} disabled={loadingHealth}>
-            <RefreshCw size={18} className={loadingHealth ? 'spin' : ''} />
-            <span>Refresh Backend Status</span>
-          </button>
+        </div>
+
+        {/* Server Status Pill */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+          <span>
+            {isConnected
+              ? `Live Engine Connected (${latency !== null ? `${latency}ms` : 'Ready'})`
+              : 'Connecting to Authoritative Server...'}
+          </span>
         </div>
       </section>
 
-      {/* Diagnostics / Foundation Dashboard */}
-      <section className="grid-diagnostic">
-        {/* Socket.IO Real-Time Engine Card */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
-              <Radio size={20} color="var(--accent-primary)" />
-              <span>Real-Time Socket Engine</span>
-            </div>
-            {isConnected ? (
-              <CheckCircle2 size={18} color="var(--success)" />
-            ) : (
-              <AlertCircle size={18} color="var(--danger)" />
-            )}
+      {/* Feature Showcase Grid */}
+      <section className="features-grid">
+        <div className="feature-card">
+          <div className="feature-icon-wrapper" style={{ background: 'var(--accent-primary-light)', color: 'var(--accent-primary)' }}>
+            <Users size={22} />
           </div>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            Bi-directional WebSocket connection with authoritative server rooms.
+          <h2 className="feature-title">Real-Time Multiplayer</h2>
+          <p className="feature-desc">
+            Connect instantly with up to 8 players per room. Authoritative server rooms guarantee zero desync and cheat protection.
           </p>
-          <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.825rem' }}>
-            <div><strong>Status:</strong> {isConnected ? 'Connected' : 'Connecting / Offline'}</div>
-            <div><strong>Socket ID:</strong> {socketId || '—'}</div>
-            <div><strong>Round-trip Latency:</strong> {latency !== null ? `${latency} ms` : 'Not tested yet'}</div>
-          </div>
         </div>
 
-        {/* Authoritative Node/Express Card */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
-              <Server size={20} color="var(--accent-secondary)" />
-              <span>Authoritative Server</span>
-            </div>
-            {healthData?.status === 'ok' ? (
-              <CheckCircle2 size={18} color="var(--success)" />
-            ) : (
-              <AlertCircle size={18} color="var(--warning)" />
-            )}
+        <div className="feature-card">
+          <div className="feature-icon-wrapper" style={{ background: 'var(--accent-secondary-light)', color: 'var(--accent-secondary)' }}>
+            <Timer size={22} />
           </div>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            Server-side word management, room lifecycle, score computation, and timers.
+          <h2 className="feature-title">Timed Drawing Rounds</h2>
+          <p className="feature-desc">
+            Configurable 45 to 90-second rounds. Server-synchronized clocks keep all participants on the exact same second.
           </p>
-          <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.825rem' }}>
-            <div><strong>Service:</strong> {healthData?.service || 'Connecting...'}</div>
-            <div><strong>Uptime:</strong> {healthData?.uptimeSeconds !== undefined ? `${healthData.uptimeSeconds}s` : '—'}</div>
-            <div><strong>Active Rooms:</strong> {healthData?.stats?.activeRooms ?? 0}</div>
-          </div>
         </div>
 
-        {/* MySQL Database Card */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
-              <Database size={20} color="var(--accent-accent)" />
-              <span>MySQL Persistence</span>
-            </div>
-            {healthData?.database?.connected ? (
-              <CheckCircle2 size={18} color="var(--success)" />
-            ) : (
-              <span style={{ fontSize: '0.75rem', color: 'var(--warning)', fontWeight: 600 }}>Graceful Standby</span>
-            )}
+        <div className="feature-card">
+          <div className="feature-icon-wrapper" style={{ background: '#ECFDF5', color: '#10B981' }}>
+            <MessageSquare size={22} />
           </div>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            Pooled connection via <code style={{ background: 'var(--bg-tertiary)', padding: '2px 4px', borderRadius: 4 }}>mysql2</code> for persistent leaderboards and match records.
+          <h2 className="feature-title">Instant Live Guessing</h2>
+          <p className="feature-desc">
+            Type guesses directly into the real-time chat stream. Correct guesses are highlighted instantly while keeping secret words hidden.
           </p>
-          <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.825rem' }}>
-            <div><strong>Host:</strong> {healthData?.database?.host || 'localhost'}:{healthData?.database?.port || 3306}</div>
-            <div><strong>Database:</strong> {healthData?.database?.database || 'doodlz'}</div>
-            <div>
-              <strong>Pool Status:</strong>{' '}
-              {healthData?.database?.connected ? (
-                <span style={{ color: 'var(--success)' }}>Connected</span>
-              ) : (
-                <span style={{ color: 'var(--warning)' }}>Waiting for local MySQL service</span>
-              )}
-            </div>
+        </div>
+
+        <div className="feature-card">
+          <div className="feature-icon-wrapper" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
+            <Trophy size={22} />
           </div>
+          <h2 className="feature-title">Speed-Weighted Scoring</h2>
+          <p className="feature-desc">
+            Fast answers earn maximum points. Drawers earn bonus score multipliers when other players guess their sketches correctly.
+          </p>
         </div>
       </section>
+
+      {/* How to Play Modal */}
+      {showHowToPlay && (
+        <div className="modal-overlay" onClick={() => setShowHowToPlay(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Palette size={22} color="var(--accent-primary)" />
+                <h2>How to Play DOODLZ</h2>
+              </div>
+              <button
+                className="tool-btn"
+                onClick={() => setShowHowToPlay(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.925rem', color: 'var(--text-secondary)' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <div style={{ background: 'var(--accent-primary-light)', color: 'var(--accent-primary)', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                  1
+                </div>
+                <div>
+                  <strong style={{ color: 'var(--text-primary)' }}>Create or Join a Room:</strong> Host a new room with custom round counts and timers, or paste a room code to join friends.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <div style={{ background: 'var(--accent-primary-light)', color: 'var(--accent-primary)', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                  2
+                </div>
+                <div>
+                  <strong style={{ color: 'var(--text-primary)' }}>Take Turns Drawing:</strong> In each round, one player is chosen as the drawer. Only the drawer sees the secret word and gets drawing tools.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <div style={{ background: 'var(--accent-primary-light)', color: 'var(--accent-primary)', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                  3
+                </div>
+                <div>
+                  <strong style={{ color: 'var(--text-primary)' }}>Race to Guess:</strong> Guessers type answers into the chat. Fast answers earn speed bonuses.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <div style={{ background: 'var(--accent-primary-light)', color: 'var(--accent-primary)', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                  4
+                </div>
+                <div>
+                  <strong style={{ color: 'var(--text-primary)' }}>Climb the Leaderboard:</strong> After all rounds conclude, the final podium reveals 1st, 2nd, and 3rd place champions!
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setShowHowToPlay(false)}>
+                <span>Got It! Let's Play</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
