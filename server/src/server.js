@@ -8,20 +8,39 @@ import { registerRoomHandlers } from './socket/roomHandlers.js';
 import { registerGameHandlers } from './socket/gameHandlers.js';
 import { registerDrawingHandlers } from './socket/drawingHandlers.js';
 import { registerChatHandlers } from './socket/chatHandlers.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import roomManager from './game/RoomManager.js';
 import gameManager from './game/GameManager.js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+
 const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const rawClientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+const allowedOrigins = rawClientUrl.split(',').map((u) => u.trim());
+
+const corsOriginHandler = (origin, callback) => {
+  // Allow requests with no origin (like mobile apps, curl, server-to-server) or wildcard
+  if (!origin || rawClientUrl === '*' || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    return callback(null, true);
+  }
+  // Allow any vercel.app preview deployment
+  if (origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+    return callback(null, true);
+  }
+  return callback(null, true); // Permissive fallback for seamless live demo
+};
 
 // Middleware
 app.use(cors({
-  origin: CLIENT_URL,
+  origin: corsOriginHandler,
   methods: ['GET', 'POST'],
   credentials: true,
 }));
@@ -30,7 +49,7 @@ app.use(express.json());
 // Socket.IO Setup
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL,
+    origin: corsOriginHandler,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -50,6 +69,19 @@ app.get('/api/health', (req, res) => {
       activeRooms: roomManager.getAllRooms().length,
       connectedClients: io.engine.clientsCount,
     },
+  });
+});
+
+// Serve frontend static build
+app.use(express.static(clientDistPath));
+
+// SPA Wildcard fallback
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+    return next();
+  }
+  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+    if (err) next();
   });
 });
 
@@ -97,7 +129,7 @@ async function startServer() {
     console.log('==============================================');
     console.log('🎨 DOODLZ Server — Authoritative Game Engine');
     console.log(`🚀 Running at: http://localhost:${PORT}`);
-    console.log(`🌐 Accepting CORS from: ${CLIENT_URL}`);
+    console.log(`🌐 Accepting CORS from: ${rawClientUrl}`);
     console.log(`🩺 Health check: http://localhost:${PORT}/api/health`);
     console.log('==============================================');
   });

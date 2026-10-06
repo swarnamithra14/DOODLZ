@@ -1,4 +1,8 @@
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+const SERVER_URL =
+  import.meta.env.VITE_SERVER_URL ||
+  (typeof window !== 'undefined' && window.location.port !== '5173'
+    ? window.location.origin
+    : 'http://localhost:5000');
 
 export async function fetchHealthStatus() {
   const response = await fetch(`${SERVER_URL}/api/health`);
