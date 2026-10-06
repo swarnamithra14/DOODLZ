@@ -9,6 +9,7 @@ import { registerGameHandlers } from './socket/gameHandlers.js';
 import { registerDrawingHandlers } from './socket/drawingHandlers.js';
 import { registerChatHandlers } from './socket/chatHandlers.js';
 import roomManager from './game/RoomManager.js';
+import gameManager from './game/GameManager.js';
 
 dotenv.config();
 
@@ -84,6 +85,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', (reason) => {
     console.log(`🔌 [Socket.IO] Client disconnected: ${socket.id} (Reason: ${reason})`);
+    gameManager.handleDisconnect(io, socket.id);
   });
 });
 

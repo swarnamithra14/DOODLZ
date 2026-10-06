@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Copy,
   Check,
@@ -10,11 +10,11 @@ import {
   LogOut,
   Clock,
   Layers,
-  Sparkles
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
-// Avatar background colors
 const AVATAR_COLORS = [
   '#6366F1', '#EC4899', '#06B6D4', '#10B981',
   '#F59E0B', '#8B5CF6', '#3B82F6', '#EF4444'
@@ -22,47 +22,73 @@ const AVATAR_COLORS = [
 
 export function Room() {
   const { roomId } = useParams();
-  const [searchParams] = useSearchParams();
-  const isHost = searchParams.get('host') === 'true';
   const navigate = useNavigate();
-  const { playerName } = useGame();
+  const {
+    currentRoom,
+    socketId,
+    startGame,
+    leaveRoom,
+    socket,
+  } = useGame();
 
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
 
-  // Default connected player roster (ready for socket state in Phase 5)
-  const [players, setPlayers] = useState([
-    {
-      id: 'p1',
-      name: playerName || (isHost ? 'HostPlayer' : 'GuestPlayer'),
-      isHost: isHost,
-      color: AVATAR_COLORS[0],
-    },
-    {
-      id: 'p2',
-      name: isHost ? 'Alex' : 'RoomHost',
-      isHost: !isHost,
-      color: AVATAR_COLORS[1],
-    },
-  ]);
+  // If client lands here without room, redirect to lobby
+  useEffect(() => {
+    if (!currentRoom) {
+      navigate('/lobby');
+    }
+  }, [currentRoom, navigate]);
+
+  // Synchronized Game Start Navigation
+  useEffect(() => {
+    if (!socket) return;
+
+    const onGameStarted = () => {
+      navigate(`/game/${roomId}`);
+    };
+
+    socket.on('game:started', onGameStarted);
+    return () => {
+      socket.off('game:started', onGameStarted);
+    };
+  }, [socket, roomId, navigate]);
+
+  if (!currentRoom) {
+    return null;
+  }
+
+  const isHost = currentRoom.hostId === socketId;
+  const players = currentRoom.players || [];
+  const config = currentRoom.config || {};
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomId);
+    navigator.clipboard.writeText(currentRoom.id);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.origin + `/room/${roomId}`);
+    navigator.clipboard.writeText(`${window.location.origin}/lobby?mode=join&code=${currentRoom.id}`);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handleStartGame = () => {
-    navigate(`/game/${roomId}`);
+  const handleStartGame = async () => {
+    setStartError('');
+    setStarting(true);
+    const result = await startGame(currentRoom.id);
+    setStarting(false);
+    if (result?.error) {
+      setStartError(result.error);
+    }
   };
 
   const handleLeaveRoom = () => {
+    leaveRoom(currentRoom.id);
     navigate('/lobby');
   };
 
@@ -77,7 +103,7 @@ export function Room() {
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.25rem' }}>
               <div className="room-code-badge">
-                <span className="room-code-text">{roomId}</span>
+                <span className="room-code-text">{currentRoom.id}</span>
                 <button
                   className="btn btn-sm btn-secondary"
                   onClick={handleCopyCode}
@@ -113,7 +139,7 @@ export function Room() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
               <Users size={18} color="var(--accent-primary)" />
-              <span>Connected Players ({players.length}/8)</span>
+              <span>Connected Players ({players.length}/{config.maxPlayers || 8})</span>
             </div>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               Min 2 players required to begin
@@ -128,12 +154,15 @@ export function Room() {
                     <Crown size={10} /> Host
                   </span>
                 )}
-                <div className="avatar-circle" style={{ background: p.color || AVATAR_COLORS[idx % AVATAR_COLORS.length] }}>
+                <div
+                  className="avatar-circle"
+                  style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] }}
+                >
                   {p.name.slice(0, 2).toUpperCase()}
                 </div>
                 <span className="player-name">{p.name}</span>
                 <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600, marginTop: '2px' }}>
-                  ● Ready
+                  ● Connected
                 </span>
               </div>
             ))}
@@ -143,34 +172,40 @@ export function Room() {
           <div style={{ display: 'flex', gap: '1.5rem', background: 'var(--bg-tertiary)', padding: '0.85rem 1.25rem', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Layers size={15} color="var(--accent-primary)" />
-              <span><strong>Rounds:</strong> 3 Rounds</span>
+              <span><strong>Rounds:</strong> {config.rounds || 3} Rounds</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Clock size={15} color="var(--accent-primary)" />
-              <span><strong>Duration:</strong> 60s per turn</span>
+              <span><strong>Duration:</strong> {config.duration || 60}s per turn</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Sparkles size={15} color="var(--accent-primary)" />
-              <span><strong>Difficulty:</strong> Medium</span>
+              <span><strong>Difficulty:</strong> <span style={{ textTransform: 'capitalize' }}>{config.difficulty || 'medium'}</span></span>
             </div>
           </div>
         </div>
 
         {/* Action Controls */}
         <div className="card" style={{ textAlign: 'center', padding: '1.75rem' }}>
+          {startError && (
+            <p className="input-error" style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>
+              {startError}
+            </p>
+          )}
+
           {isHost ? (
             <div>
               <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem', fontSize: '0.95rem' }}>
-                You are the room host. When all players are ready, launch the game!
+                You are the room host. When all players have joined, launch the match!
               </p>
               <button
                 className="btn btn-primary btn-lg"
                 onClick={handleStartGame}
-                disabled={players.length < 2}
+                disabled={players.length < 2 || starting}
                 style={{ minWidth: '220px' }}
               >
-                <Play size={18} />
-                <span>Start Game</span>
+                {starting ? <Loader2 size={18} className="spin" /> : <Play size={18} />}
+                <span>{starting ? 'Starting...' : players.length < 2 ? 'Need 2+ Players' : 'Start Game'}</span>
               </button>
             </div>
           ) : (
@@ -180,7 +215,7 @@ export function Room() {
                 <span>Waiting for the host to start the game...</span>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                The drawing canvas and secret word rotation will begin automatically.
+                The drawing canvas and secret word rotation will begin automatically for all players.
               </p>
             </div>
           )}

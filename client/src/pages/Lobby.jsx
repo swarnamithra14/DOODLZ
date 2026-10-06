@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Users, Sparkles, ArrowRight, Clock, Layers, Award } from 'lucide-react';
+import { Play, Users, Sparkles, ArrowRight, Clock, Layers, Award, Loader2 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 export function Lobby() {
@@ -9,38 +9,58 @@ export function Lobby() {
   const [activeTab, setActiveTab] = useState(initialMode === 'join' ? 'join' : 'create');
 
   const navigate = useNavigate();
-  const { setPlayerName } = useGame();
+  const { playerName, setPlayerName, createRoom, joinRoom, isConnected } = useGame();
 
   // Create Form State
-  const [createName, setCreateName] = useState('');
+  const [createName, setCreateName] = useState(playerName || '');
   const [rounds, setRounds] = useState(3);
   const [duration, setDuration] = useState(60);
   const [difficulty, setDifficulty] = useState('medium');
   const [createError, setCreateError] = useState('');
+  const [creating, setCreating] = useState(false);
 
   // Join Form State
-  const [joinName, setJoinName] = useState('');
+  const [joinName, setJoinName] = useState(playerName || '');
   const [roomCode, setRoomCode] = useState('');
   const [joinError, setJoinError] = useState('');
+  const [joining, setJoining] = useState(false);
 
-  const handleCreateGame = (e) => {
+  const handleCreateGame = async (e) => {
     e.preventDefault();
     if (!createName.trim() || createName.trim().length < 2) {
-      setCreateError('Please enter a player name (at least 2 characters)');
+      setCreateError('Please enter a player name (2–16 characters)');
       return;
     }
-    setCreateError('');
-    setPlayerName(createName.trim());
+    if (!isConnected) {
+      setCreateError('Cannot connect to server. Ensure backend is running.');
+      return;
+    }
 
-    // Generate random mock room code for UI demonstration; Phase 5 will hook to real socket creation
-    const generatedCode = 'DZ' + Math.random().toString(36).substring(2, 6).toUpperCase();
-    navigate(`/room/${generatedCode}?host=true`);
+    setCreateError('');
+    setCreating(true);
+
+    const result = await createRoom({
+      playerName: createName.trim(),
+      config: {
+        rounds,
+        duration,
+        difficulty,
+      },
+    });
+
+    setCreating(false);
+
+    if (result.success) {
+      navigate(`/room/${result.room.id}?host=true`);
+    } else {
+      setCreateError(result.error || 'Failed to create room.');
+    }
   };
 
-  const handleJoinGame = (e) => {
+  const handleJoinGame = async (e) => {
     e.preventDefault();
     if (!joinName.trim() || joinName.trim().length < 2) {
-      setJoinError('Please enter a player name (at least 2 characters)');
+      setJoinError('Please enter a player name (2–16 characters)');
       return;
     }
     const cleanCode = roomCode.trim().toUpperCase();
@@ -48,9 +68,26 @@ export function Lobby() {
       setJoinError('Please enter a valid room code (at least 4 characters)');
       return;
     }
+    if (!isConnected) {
+      setJoinError('Cannot connect to server. Ensure backend is running.');
+      return;
+    }
+
     setJoinError('');
-    setPlayerName(joinName.trim());
-    navigate(`/room/${cleanCode}`);
+    setJoining(true);
+
+    const result = await joinRoom({
+      roomId: cleanCode,
+      playerName: joinName.trim(),
+    });
+
+    setJoining(false);
+
+    if (result.success) {
+      navigate(`/room/${result.room.id}`);
+    } else {
+      setJoinError(result.error || 'Failed to join room.');
+    }
   };
 
   return (
@@ -109,6 +146,7 @@ export function Lobby() {
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
                   onFocus={() => setActiveTab('create')}
+                  required
                 />
                 {createError && <p className="input-error">{createError}</p>}
               </div>
@@ -177,9 +215,14 @@ export function Lobby() {
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>
-                <Play size={18} />
-                <span>Create Game Room</span>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={{ width: '100%', marginTop: '0.5rem' }}
+                disabled={creating}
+              >
+                {creating ? <Loader2 size={18} className="spin" /> : <Play size={18} />}
+                <span>{creating ? 'Creating Room...' : 'Create Game Room'}</span>
               </button>
             </form>
           </div>
@@ -210,6 +253,7 @@ export function Lobby() {
                   value={joinName}
                   onChange={(e) => setJoinName(e.target.value)}
                   onFocus={() => setActiveTab('join')}
+                  required
                 />
               </div>
 
@@ -226,17 +270,23 @@ export function Lobby() {
                   value={roomCode}
                   onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
                   onFocus={() => setActiveTab('join')}
+                  required
                 />
                 {joinError && <p className="input-error">{joinError}</p>}
               </div>
 
               <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Tip:</strong> You can also join instantly by pasting a full invite link directly into your browser!
+                💡 <strong>Tip:</strong> You can open multiple browser tabs to simulate multiplayer right on your machine!
               </div>
 
-              <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: 'auto' }}>
-                <ArrowRight size={18} />
-                <span>Join Game Room</span>
+              <button
+                type="submit"
+                className="btn btn-secondary"
+                style={{ width: '100%', marginTop: 'auto' }}
+                disabled={joining}
+              >
+                {joining ? <Loader2 size={18} className="spin" /> : <ArrowRight size={18} />}
+                <span>{joining ? 'Connecting...' : 'Join Game Room'}</span>
               </button>
             </form>
           </div>

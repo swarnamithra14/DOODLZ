@@ -6,18 +6,33 @@ import { useGame } from '../context/GameContext';
 export function Results() {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { playerName } = useGame();
+  const { standings, currentRoom, playAgain, leaveRoom } = useGame();
 
-  const finalScores = [
-    { rank: 1, name: playerName || 'Player1', score: 1420, isWinner: true },
-    { rank: 2, name: 'Sophia', score: 1180, isWinner: false },
-    { rank: 3, name: 'Marcus', score: 950, isWinner: false },
-    { rank: 4, name: 'Leo', score: 620, isWinner: false },
-  ];
+  // Final scores from authoritative standings or sorted room players
+  const finalScores =
+    standings && standings.length > 0
+      ? standings
+      : currentRoom?.players
+      ? [...currentRoom.players].sort((a, b) => (b.score || 0) - (a.score || 0)).map((p, idx) => ({
+          rank: idx + 1,
+          name: p.name,
+          score: p.score || 0,
+        }))
+      : [];
 
   const first = finalScores[0];
   const second = finalScores[1];
   const third = finalScores[2];
+
+  const handlePlayAgain = async () => {
+    await playAgain(roomId);
+    navigate(`/room/${roomId}`);
+  };
+
+  const handleBackToLobby = () => {
+    leaveRoom(roomId);
+    navigate('/lobby');
+  };
 
   return (
     <main className="main-content">
@@ -91,22 +106,22 @@ export function Results() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {finalScores.map((p) => (
+            {finalScores.map((p, idx) => (
               <div
-                key={p.rank}
+                key={p.id || idx}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '0.65rem 0.85rem',
                   borderRadius: 'var(--radius-sm)',
-                  background: p.rank === 1 ? '#FFFBEB' : 'var(--bg-tertiary)',
-                  border: p.rank === 1 ? '1px solid #FDE68A' : 'none',
+                  background: (p.rank || idx + 1) === 1 ? '#FFFBEB' : 'var(--bg-tertiary)',
+                  border: (p.rank || idx + 1) === 1 ? '1px solid #FDE68A' : 'none',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontWeight: 800, width: 20, color: p.rank === 1 ? '#D97706' : 'var(--text-muted)' }}>
-                    #{p.rank}
+                  <span style={{ fontWeight: 800, width: 20, color: (p.rank || idx + 1) === 1 ? '#D97706' : 'var(--text-muted)' }}>
+                    #{p.rank || idx + 1}
                   </span>
                   <span style={{ fontWeight: 700 }}>{p.name}</span>
                 </div>
@@ -122,14 +137,14 @@ export function Results() {
         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
             className="btn btn-primary btn-lg"
-            onClick={() => navigate(`/room/${roomId}`)}
+            onClick={handlePlayAgain}
           >
             <RotateCcw size={18} />
             <span>Play Again</span>
           </button>
           <button
             className="btn btn-secondary btn-lg"
-            onClick={() => navigate('/lobby')}
+            onClick={handleBackToLobby}
           >
             <Home size={18} />
             <span>Back to Lobby</span>

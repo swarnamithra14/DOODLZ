@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Clock, Eye, Edit3, HelpCircle, Trophy, LogOut, CheckCircle2 } from 'lucide-react';
+import { Clock, Eye, Edit3, Trophy, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 import CanvasStage from '../components/canvas/CanvasStage';
 import DrawingToolbar from '../components/canvas/DrawingToolbar';
@@ -10,93 +10,58 @@ import ChatBox from '../components/chat/ChatBox';
 export function Game() {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { playerName } = useGame();
   const canvasRef = useRef(null);
 
-  // Game UI State
-  const [currentRound, setCurrentRound] = useState(1);
-  const [totalRounds, setTotalRounds] = useState(3);
-  const [timeLeft, setTimeLeft] = useState(58);
-  const [isDrawer, setIsDrawer] = useState(true); // Toggleable for UI testing
-  const [secretWord, setSecretWord] = useState('ELEPHANT');
-  const [hasGuessed, setHasGuessed] = useState(false);
+  const {
+    currentRoom,
+    roundState,
+    timeLeft,
+    messages,
+    standings,
+    roundResult,
+    sendMessage,
+    clearCanvas,
+    socketId,
+  } = useGame();
 
-  // Drawing tools state
+  // Drawing tool options
   const [currentTool, setCurrentTool] = useState('pencil');
   const [brushColor, setBrushColor] = useState('#0F172A');
   const [brushSize, setBrushSize] = useState(7);
 
-  // Players state
-  const [players, setPlayers] = useState([
-    { id: 'p1', name: playerName || 'Player1', score: 450, hasGuessed: false },
-    { id: 'p2', name: 'Sophia', score: 320, hasGuessed: true },
-    { id: 'p3', name: 'Marcus', score: 200, hasGuessed: false },
-  ]);
-
-  // Chat / Guess feed
-  const [messages, setMessages] = useState([
-    { type: 'system', text: 'Round 1 started! Marcus is drawing.' },
-    { sender: 'Sophia', text: 'is it a dog?', type: 'guess' },
-    { sender: 'Sophia', text: 'elephant', type: 'correct', points: 300 },
-  ]);
-
-  // Local simulated countdown for UI demonstration
+  // If match concluded, redirect to final results
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          return 60; // reset loop for UI preview
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  const handleSendMessage = (text) => {
-    const lower = text.toLowerCase().trim();
-    if (lower === secretWord.toLowerCase()) {
-      setHasGuessed(true);
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: playerName || 'You',
-          text: text,
-          type: 'correct',
-          points: 280,
-        },
-      ]);
-      setPlayers((prev) =>
-        prev.map((p) =>
-          p.id === 'p1' ? { ...p, score: p.score + 280, hasGuessed: true } : p
-        )
-      );
-    } else {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: playerName || 'You',
-          text: text,
-          type: 'guess',
-        },
-      ]);
+    if (standings && standings.length > 0) {
+      navigate(`/results/${roomId}`);
     }
-  };
+  }, [standings, roomId, navigate]);
+
+  // If user dropped room, return to lobby
+  useEffect(() => {
+    if (!currentRoom) {
+      navigate('/lobby');
+    }
+  }, [currentRoom, navigate]);
+
+  if (!currentRoom) return null;
+
+  const isDrawer = roundState.isDrawer;
+  const players = currentRoom.players || [];
+  const currentDrawerName = roundState.drawerName || 'Player';
+
+  // Check if current client has already guessed
+  const currentPlayer = players.find((p) => p.id === socketId);
+  const hasGuessed = currentPlayer?.hasGuessed || false;
 
   const handleClearCanvas = () => {
-    if (canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (isDrawer) {
+      clearCanvas();
+      if (canvasRef.current) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
-  };
-
-  const getWordMask = () => {
-    return secretWord
-      .split('')
-      .map((c) => (c === ' ' ? '  ' : '_'))
-      .join(' ');
   };
 
   return (
@@ -104,24 +69,22 @@ export function Game() {
       <div className="game-screen">
         {/* Top Status Bar */}
         <header className="game-topbar">
-          {/* Round Indicator & Role switcher */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>
-              Round {currentRound} / {totalRounds}
+              Round {roundState.round} / {roundState.totalRounds}
             </div>
 
-            {/* Role Switcher (Convenient for UI inspection) */}
-            <button
-              className="btn btn-sm btn-secondary"
-              onClick={() => {
-                setIsDrawer(!isDrawer);
-                setHasGuessed(false);
-              }}
-              title="Click to toggle between Drawer and Guesser view"
-            >
-              {isDrawer ? <Edit3 size={14} color="var(--accent-primary)" /> : <Eye size={14} />}
-              <span>Mode: {isDrawer ? 'Drawer' : 'Guesser'}</span>
-            </button>
+            <div className="status-pill">
+              {isDrawer ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-primary)', fontWeight: 700 }}>
+                  <Edit3 size={14} /> You are Drawing
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}>
+                  <Eye size={14} /> {currentDrawerName} is Drawing
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Central Word / Clue Display */}
@@ -129,37 +92,36 @@ export function Game() {
             {isDrawer ? (
               <div style={{ textAlign: 'center' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Secret Word to Draw
+                  Your Secret Word to Draw
                 </span>
-                <div className="word-drawer-view">{secretWord}</div>
+                <div className="word-drawer-view">{roundState.secretWord}</div>
               </div>
             ) : (
               <div style={{ textAlign: 'center' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Guess the Word ({secretWord.length} letters)
+                  Secret Word Clue
                 </span>
-                <div className="word-secret-blank">{getWordMask()}</div>
+                <div className="word-secret-blank">{roundState.wordHint || '_ _ _ _ _'}</div>
               </div>
             )}
           </div>
 
-          {/* Timer and Finish Match */}
+          {/* Authoritative Server Countdown Timer */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div className={`game-timer-badge ${timeLeft <= 10 ? 'urgent' : ''}`}>
               <Clock size={18} />
               <span>{timeLeft}s</span>
             </div>
-
-            <button
-              className="btn btn-sm btn-secondary"
-              onClick={() => navigate(`/results/${roomId}`)}
-              title="View Final Match Results"
-            >
-              <Trophy size={14} />
-              <span>Results</span>
-            </button>
           </div>
         </header>
+
+        {/* Round Intermission Banner */}
+        {roundResult && (
+          <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '0.6rem 1rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', color: '#065F46', fontWeight: 700, fontSize: '0.9rem' }}>
+            <Sparkles size={16} />
+            <span>Round Concluded ({roundResult.reason}). The secret word was: "{roundResult.secretWord.toUpperCase()}". Next round starting...</span>
+          </div>
+        )}
 
         {/* Game Main Area: Canvas + Sidebar */}
         <div className="game-main-content">
@@ -173,7 +135,7 @@ export function Game() {
               brushSize={brushSize}
             />
 
-            {/* Drawing Toolbar (Visible to drawer) */}
+            {/* Drawing Toolbar (Exclusive to drawer) */}
             {isDrawer && (
               <DrawingToolbar
                 currentTool={currentTool}
@@ -187,16 +149,16 @@ export function Game() {
             )}
           </section>
 
-          {/* Right Sidebar: Scoreboard & Chat */}
+          {/* Right Sidebar: Live Scoreboard & Chat */}
           <aside className="game-sidebar">
             <Scoreboard
               players={players}
-              currentDrawerId={isDrawer ? 'p1' : 'p3'}
+              currentDrawerId={roundState.drawerId}
             />
 
             <ChatBox
               messages={messages}
-              onSendMessage={handleSendMessage}
+              onSendMessage={sendMessage}
               isDrawer={isDrawer}
               hasGuessed={hasGuessed}
             />
