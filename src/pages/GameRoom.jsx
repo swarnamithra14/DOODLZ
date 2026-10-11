@@ -48,8 +48,8 @@ export default function GameRoom({
   const [revealedWord, setRevealedWord] = useState('');
   const [usedWords, setUsedWords] = useState([]);
   const [timeLeft, setTimeLeft] = useState(ROUND_TIME_SECONDS);
-  const [isRoundActive, setIsRoundActive] = useState(false);
   const [roundIntermission, setRoundIntermission] = useState(false);
+  const isRoundActive = !roundIntermission;
   const [intermissionCountdown, setIntermissionCountdown] = useState(4);
 
   // Drawing state
@@ -153,7 +153,6 @@ export default function GameRoom({
     setCorrectGuesserIds([]);
     setTimeLeft(ROUND_TIME_SECONDS);
     setRoundIntermission(false);
-    setIsRoundActive(true);
 
     const activeDrawer = gamePlayers[drawerIdx] || gamePlayers[0];
     setCurrentDrawerIndex(drawerIdx);
@@ -229,7 +228,6 @@ export default function GameRoom({
 
   // Turn ending logic
   const handleEndTurn = async () => {
-    setIsRoundActive(false);
     setRoundIntermission(true);
     setIntermissionCountdown(4);
     const wordToReveal = currentWordItem?.word || revealedWord || '??';
@@ -569,7 +567,7 @@ export default function GameRoom({
         {/* Center: Interactive Drawing Canvas */}
         <div style={{ position: 'relative' }}>
           <DrawingCanvas
-            isDrawer={isDrawer && isRoundActive}
+            isDrawer={isDrawer && !roundIntermission}
             strokes={strokes}
             onStrokesChange={handleStrokesChange}
             onClearCanvas={handleClearCanvas}
