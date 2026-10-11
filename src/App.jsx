@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar.jsx';
 import HowToPlayModal from './components/HowToPlayModal.jsx';
 import BackendStatusModal from './components/BackendStatusModal.jsx';
@@ -6,7 +6,14 @@ import Home from './pages/Home.jsx';
 import Lobby from './pages/Lobby.jsx';
 import GameRoom from './pages/GameRoom.jsx';
 import Results from './pages/Results.jsx';
-import { generateRoomCode } from './utils/roomCode.js';
+import { 
+  createRoom, 
+  joinRoom, 
+  subscribeToRoom, 
+  subscribeToPlayers, 
+  leaveRoom, 
+  startRoomGame 
+} from './services/roomService.js';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'lobby' | 'game' | 'results'
@@ -16,67 +23,68 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [finalPlayers, setFinalPlayers] = useState([]);
 
-  // Handle Room Creation
-  const handleCreateRoom = ({ name, avatar }) => {
-    const code = generateRoomCode();
-    const userId = 'user_' + Math.random().toString(36).substring(2, 9);
-    const user = {
-      id: userId,
-      name,
-      avatar,
-      isHost: true,
-      score: 0
-    };
-
-    setCurrentUser(user);
+  // Handle Room Creation via Room Service
+  const handleCreateRoom = async ({ name, avatar }) => {
+    const res = await createRoom({ name, avatar });
+    setCurrentUser(res.currentUser);
     setRoom({
-      code,
-      hostId: userId,
-      players: [user]
+      code: res.roomCode,
+      hostId: res.currentUser.id,
+      isLocal: res.isLocal,
+      players: [res.currentUser]
     });
     setCurrentScreen('lobby');
   };
 
-  // Handle Room Joining
-  const handleJoinRoom = ({ roomCode, name, avatar }) => {
-    const userId = 'user_' + Math.random().toString(36).substring(2, 9);
-    const user = {
-      id: userId,
-      name,
-      avatar,
-      isHost: false,
-      score: 0
-    };
-
-    setCurrentUser(user);
-    
-    // In local prototype mode before Firestore, synthesize room state with host + user
+  // Handle Room Joining via Room Service
+  const handleJoinRoom = async ({ roomCode, name, avatar }) => {
+    const res = await joinRoom(roomCode, { name, avatar });
+    setCurrentUser(res.currentUser);
     setRoom({
-      code: roomCode,
-      hostId: 'host_default',
-      players: [
-        {
-          id: 'host_default',
-          name: 'Room Host 👑',
-          avatar: '🎨',
-          isHost: true,
-          score: 0
-        },
-        user
-      ]
+      code: res.roomCode,
+      hostId: 'host_pending',
+      isLocal: res.isLocal,
+      players: [res.currentUser]
     });
     setCurrentScreen('lobby');
   };
+
+  // Real-time synchronization during Waiting Lobby (Firebase Live mode)
+  useEffect(() => {
+    if (currentScreen !== 'lobby' || !room || room.isLocal) return;
+
+    // 1. Subscribe to room state (detects when host starts the game)
+    const unsubRoom = subscribeToRoom(room.code, (roomData) => {
+      if (roomData.status === 'playing') {
+        setCurrentScreen('game');
+      }
+    });
+
+    // 2. Subscribe to player roster changes in real-time
+    const unsubPlayers = subscribeToPlayers(room.code, (livePlayers) => {
+      if (livePlayers && livePlayers.length > 0) {
+        setRoom(prev => prev ? ({ ...prev, players: livePlayers }) : null);
+      }
+    });
+
+    return () => {
+      unsubRoom();
+      unsubPlayers();
+    };
+  }, [currentScreen, room?.code, room?.isLocal]);
 
   // Handle Leaving Room
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    if (room && currentUser && !room.isLocal) {
+      await leaveRoom(room.code, currentUser.id);
+    }
     setRoom(null);
     setCurrentUser(null);
     setFinalPlayers([]);
     setCurrentScreen('home');
   };
 
-  // Development/Test helper: simulate a friend or bot joining
+  // Development/Test helper: simulate a friend or bot joining (useful in local testing)
   const handleSimulateJoin = () => {
     if (!room) return;
     const botAvatars = ['🐱', '🚀', '🦊', '🐼', '🍕', '🦄'];
@@ -99,7 +107,10 @@ export default function App() {
   };
 
   // Start the playable GameRoom
-  const handleStartGame = () => {
+  const handleStartGame = async () => {
+    if (room && !room.isLocal) {
+      await startRoomGame(room.code);
+    }
     setCurrentScreen('game');
   };
 

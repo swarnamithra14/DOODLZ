@@ -21,20 +21,24 @@ export default function Home({ onCreateRoom, onJoinRoom, onOpenHowToPlay }) {
     if (errorMessage) setErrorMessage('');
   };
 
-  const handleCreateGame = (e) => {
+  const handleCreateGame = async (e) => {
     e.preventDefault();
     const nameValidation = validatePlayerName(playerName);
     if (!nameValidation.valid) {
       setErrorMessage(nameValidation.error);
       return;
     }
-    onCreateRoom({
-      name: nameValidation.sanitizedName,
-      avatar: selectedAvatar
-    });
+    try {
+      await onCreateRoom({
+        name: nameValidation.sanitizedName,
+        avatar: selectedAvatar
+      });
+    } catch (err) {
+      setErrorMessage(err.message);
+    }
   };
 
-  const handleJoinGame = (e) => {
+  const handleJoinGame = async (e) => {
     e.preventDefault();
     const nameValidation = validatePlayerName(playerName);
     if (!nameValidation.valid) {
@@ -48,11 +52,15 @@ export default function Home({ onCreateRoom, onJoinRoom, onOpenHowToPlay }) {
       return;
     }
 
-    onJoinRoom({
-      roomCode: normalizeRoomCode(roomCodeInput),
-      name: nameValidation.sanitizedName,
-      avatar: selectedAvatar
-    });
+    try {
+      await onJoinRoom({
+        roomCode: normalizeRoomCode(roomCodeInput),
+        name: nameValidation.sanitizedName,
+        avatar: selectedAvatar
+      });
+    } catch (err) {
+      setErrorMessage(err.message);
+    }
   };
 
   return (
