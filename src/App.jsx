@@ -1,122 +1,128 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React, { useState } from 'react';
+import Navbar from './components/Navbar.jsx';
+import HowToPlayModal from './components/HowToPlayModal.jsx';
+import Home from './pages/Home.jsx';
+import Lobby from './pages/Lobby.jsx';
+import { generateRoomCode, AVATAR_OPTIONS } from './utils/roomCode.js';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'lobby' | 'game'
+  const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [room, setRoom] = useState(null);
+
+  // Handle Room Creation
+  const handleCreateRoom = ({ name, avatar }) => {
+    const code = generateRoomCode();
+    const userId = 'user_' + Math.random().toString(36).substring(2, 9);
+    const user = {
+      id: userId,
+      name,
+      avatar,
+      isHost: true
+    };
+
+    setCurrentUser(user);
+    setRoom({
+      code,
+      hostId: userId,
+      players: [user]
+    });
+    setCurrentScreen('lobby');
+  };
+
+  // Handle Room Joining
+  const handleJoinRoom = ({ roomCode, name, avatar }) => {
+    const userId = 'user_' + Math.random().toString(36).substring(2, 9);
+    const user = {
+      id: userId,
+      name,
+      avatar,
+      isHost: false
+    };
+
+    setCurrentUser(user);
+    
+    // In local prototype mode before Firestore, synthesize room state with host + user
+    setRoom({
+      code: roomCode,
+      hostId: 'host_default',
+      players: [
+        {
+          id: 'host_default',
+          name: 'Room Host 👑',
+          avatar: '🎨',
+          isHost: true
+        },
+        user
+      ]
+    });
+    setCurrentScreen('lobby');
+  };
+
+  // Handle Leaving Room
+  const handleLeaveRoom = () => {
+    setRoom(null);
+    setCurrentUser(null);
+    setCurrentScreen('home');
+  };
+
+  // Development/Test helper: simulate a friend or bot joining
+  const handleSimulateJoin = () => {
+    if (!room) return;
+    const botAvatars = ['🐱', '🚀', '🦊', '🐼', '🍕', '🦄'];
+    const botNames = ['PixelPete', 'SketchySam', 'ArtisticAmy', 'DoodleDan', 'LunaDraws'];
+    const randomAvatar = botAvatars[Math.floor(Math.random() * botAvatars.length)];
+    const randomName = botNames[Math.floor(Math.random() * botNames.length)] + Math.floor(Math.random() * 100);
+
+    const newPlayer = {
+      id: 'bot_' + Math.random().toString(36).substring(2, 9),
+      name: randomName,
+      avatar: randomAvatar,
+      isHost: false
+    };
+
+    setRoom((prev) => ({
+      ...prev,
+      players: [...prev.players, newPlayer]
+    }));
+  };
+
+  const handleStartGame = () => {
+    alert('Game starting! Local playable game engine is being wired in Phase 2.');
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app-container">
+      <Navbar onOpenHowToPlay={() => setIsHowToPlayOpen(true)} />
 
-      <div className="ticks"></div>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        {currentScreen === 'home' && (
+          <Home 
+            onCreateRoom={handleCreateRoom}
+            onJoinRoom={handleJoinRoom}
+            onOpenHowToPlay={() => setIsHowToPlayOpen(true)}
+          />
+        )}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {currentScreen === 'lobby' && room && (
+          <Lobby 
+            roomCode={room.code}
+            currentUser={currentUser}
+            players={room.players}
+            isHost={currentUser?.isHost || false}
+            onStartGame={handleStartGame}
+            onLeaveRoom={handleLeaveRoom}
+            onSimulateJoin={handleSimulateJoin}
+          />
+        )}
+      </main>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* Persistent How To Play Dialog */}
+      <HowToPlayModal 
+        isOpen={isHowToPlayOpen} 
+        onClose={() => setIsHowToPlayOpen(false)} 
+      />
+    </div>
+  );
 }
-
-export default App

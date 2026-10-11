@@ -1,0 +1,214 @@
+/**
+ * Doodlz Design System & Theme Variables
+ * Playful, tactile, modern doodle game styling
+ */
+
+:root {
+  /* Brand Colors */
+  --color-primary: #FFD129;        /* Sunny Doodle Yellow */
+  --color-primary-hover: #F5C418;
+  --color-secondary: #FF5376;      /* Vibrant Coral Pink */
+  --color-secondary-hover: #E83F63;
+  --color-accent-blue: #3B82F6;    /* Electric Sky Blue */
+  --color-accent-blue-hover: #2563EB;
+  --color-accent-green: #10B981;   /* Fresh Mint */
+  --color-accent-purple: #8B5CF6;  /* Magic Violet */
+  --color-accent-orange: #F97316;  /* Bright Amber */
+
+  /* Neutral & Canvas Tones */
+  --color-bg: #FDFBF7;             /* Warm textured sketchpad parchment */
+  --color-bg-alt: #F4EFE6;
+  --color-card: #FFFFFF;
+  --color-card-muted: #F8F7F2;
+  --color-text-main: #181824;      /* High contrast ink */
+  --color-text-muted: #64748B;
+  --color-text-light: #94A3B8;
+  --color-border: #181824;         /* Tactile ink border */
+  --color-border-subtle: #E2E8F0;
+
+  /* Status Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #0284C7;
+
+  /* Typography */
+  --font-display: 'Fredoka', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Shadows - Tactile Neo-Brutalist Playful Shadows */
+  --shadow-sm: 2px 2px 0px var(--color-border);
+  --shadow-md: 4px 4px 0px var(--color-border);
+  --shadow-lg: 6px 6px 0px var(--color-border);
+  --shadow-pop: 8px 8px 0px var(--color-border);
+  --shadow-pressed: 0px 0px 0px var(--color-border);
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: 
+    radial-gradient(var(--color-border-subtle) 1.5px, transparent 1.5px),
+    radial-gradient(var(--color-border-subtle) 1.5px, var(--color-bg) 1.5px);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+}
+
+/* Base button styling */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 0.75rem 1.4rem;
+  border-radius: var(--radius-md);
+  border: 2.5px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+  user-select: none;
+  text-decoration: none;
+  color: var(--color-text-main);
+}
+
+.btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+
+.btn-secondary {
+  background-color: var(--color-secondary);
+  color: #FFFFFF;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--color-secondary-hover);
+}
+
+.btn-accent {
+  background-color: var(--color-accent-blue);
+  color: #FFFFFF;
+}
+.btn-accent:hover:not(:disabled) {
+  background-color: var(--color-accent-blue-hover);
+}
+
+.btn-outline {
+  background-color: #FFFFFF;
+}
+.btn-outline:hover:not(:disabled) {
+  background-color: var(--color-bg-alt);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05);
+  box-shadow: none;
+  transform: none;
+}
+
+/* Card Container */
+.doodle-card {
+  background: var(--color-card);
+  border: 2.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem;
+  position: relative;
+}
+
+/* Input Fields */
+.doodle-input {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 500;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 2.5px solid var(--color-border);
+  background-color: #FFFFFF;
+  color: var(--color-text-main);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.doodle-input:focus {
+  border-color: var(--color-accent-blue);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border);
+}
+
+.badge-host {
+  background-color: var(--color-primary);
+  color: var(--color-text-main);
+}
+
+.badge-you {
+  background-color: var(--color-accent-blue);
+  color: #FFFFFF;
+}
+
+.badge-ready {
+  background-color: var(--color-accent-green);
+  color: #FFFFFF;
+}
