@@ -19,11 +19,15 @@ import {
   subscribeToChatMessages, 
   setAuthoritativeTurn, 
   subscribeToSecretWord, 
-  awardPlayerScore 
+  awardPlayerScore,
+  updateRoomCountdown,
+  setIntermissionInFirestore,
+  endGameInFirestore,
+  addCorrectGuesserInFirestore
 } from '../services/gameService.js';
 import { subscribeToRoom, subscribeToPlayers } from '../services/roomService.js';
 import { isFirebaseConfigured } from '../services/firebase.js';
-import { Clock, Sparkles, Award, ArrowRight, LogOut } from 'lucide-react';
+import { Clock, Award, LogOut } from 'lucide-react';
 
 const TOTAL_ROUNDS = 3;
 
@@ -37,9 +41,11 @@ export default function GameRoom({
   // Game session state
   const [currentRound, setCurrentRound] = useState(1);
   const [currentDrawerIndex, setCurrentDrawerIndex] = useState(0);
+  const [currentDrawerId, setCurrentDrawerId] = useState(players[0]?.id || '');
   const [currentWordItem, setCurrentWordItem] = useState(null);
   const [publicHint, setPublicHint] = useState('');
   const [publicCategory, setPublicCategory] = useState('');
+  const [revealedWord, setRevealedWord] = useState('');
   const [usedWords, setUsedWords] = useState([]);
   const [timeLeft, setTimeLeft] = useState(ROUND_TIME_SECONDS);
   const [isRoundActive, setIsRoundActive] = useState(false);
@@ -56,25 +62,27 @@ export default function GameRoom({
   const [correctGuesserIds, setCorrectGuesserIds] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
 
-  // Active drawer identity
-  const currentDrawer = gamePlayers[currentDrawerIndex] || gamePlayers[0];
-  const isDrawer = currentDrawer?.id === currentUser?.id;
+  // Roles
   const isHost = currentUser?.isHost || false;
+  const isDrawer = currentDrawerId === currentUser?.id;
+  const currentDrawer = gamePlayers.find(p => p.id === currentDrawerId) || gamePlayers[0];
   const hasCurrentUserGuessed = correctGuesserIds.includes(currentUser?.id);
 
-  // 1. REALTIME FIRESTORE SUBSCRIPTIONS (when connected to Firebase)
+  // Keep track of evaluated message IDs by host to prevent duplicate scoring
+  const evaluatedMsgIdsRef = useRef(new Set());
+
+  // 1. REALTIME FIRESTORE SUBSCRIPTIONS
   useEffect(() => {
     if (!isFirebaseConfigured() || !roomCode) return;
 
-    // A. Subscribe to live strokes across all screens
+    // A. Subscribe to live strokes
     const unsubStrokes = subscribeToStrokes(roomCode, (liveStrokes) => {
-      // Guessers always sync all live strokes
       if (!isDrawer) {
         setStrokes(liveStrokes);
       }
     });
 
-    // B. Subscribe to live chat / guess feed
+    // B. Subscribe to live chat feed
     const unsubChat = subscribeToChatMessages(roomCode, (liveMessages) => {
       setChatMessages(liveMessages);
     });
@@ -86,18 +94,27 @@ export default function GameRoom({
       }
     });
 
-    // D. Subscribe to public room metadata (hints, category, turn sync)
+    // D. Subscribe to authoritative room metadata (syncs rounds, turns, timer across all screens)
     const unsubRoom = subscribeToRoom(roomCode, (roomData) => {
-      if (roomData) {
-        if (roomData.currentHint) setPublicHint(roomData.currentHint);
-        if (roomData.currentCategory) setPublicCategory(roomData.currentCategory);
-        if (roomData.currentRound) setCurrentRound(roomData.currentRound);
-        if (roomData.currentDrawerId) {
-          const idx = gamePlayers.findIndex(p => p.id === roomData.currentDrawerId);
-          if (idx !== -1 && idx !== currentDrawerIndex) {
-            setCurrentDrawerIndex(idx);
-          }
-        }
+      if (!roomData) return;
+
+      if (roomData.status === 'ended') {
+        onGameEnd(gamePlayers);
+        return;
+      }
+
+      if (roomData.currentRound !== undefined) setCurrentRound(roomData.currentRound);
+      if (roomData.currentDrawerIndex !== undefined) setCurrentDrawerIndex(roomData.currentDrawerIndex);
+      if (roomData.currentDrawerId) setCurrentDrawerId(roomData.currentDrawerId);
+      if (roomData.currentHint !== undefined) setPublicHint(roomData.currentHint);
+      if (roomData.currentCategory !== undefined) setPublicCategory(roomData.currentCategory);
+      if (roomData.correctGuesserIds) setCorrectGuesserIds(roomData.correctGuesserIds);
+      if (roomData.isIntermission !== undefined) setRoundIntermission(roomData.isIntermission);
+      if (roomData.revealedWord) setRevealedWord(roomData.revealedWord);
+
+      // Non-hosts synchronize countdown timer from authoritative room state
+      if (!isHost && roomData.timeLeft !== undefined) {
+        setTimeLeft(roomData.timeLeft);
       }
     });
 
@@ -107,9 +124,9 @@ export default function GameRoom({
       unsubPlayers();
       unsubRoom();
     };
-  }, [roomCode, isDrawer, currentDrawerIndex, gamePlayers.length]);
+  }, [roomCode, isDrawer, isHost, gamePlayers.length]);
 
-  // E. Drawer subscribes to protected secret word
+  // E. Secret word subscription for the drawer
   useEffect(() => {
     if (!isFirebaseConfigured() || !roomCode || !isDrawer) return;
 
@@ -117,8 +134,7 @@ export default function GameRoom({
       if (secretData) {
         setCurrentWordItem({
           word: secretData.word,
-          category: secretData.category,
-          difficulty: 'medium'
+          category: secretData.category
         });
       }
     });
@@ -126,105 +142,128 @@ export default function GameRoom({
     return () => unsubSecret();
   }, [roomCode, isDrawer]);
 
-  // Start new turn (Host coordinates word selection & turn initiation)
-  const startNewTurn = () => {
+  // HOST-ONLY: Starts a new turn and publishes authoritative turn data to Firestore
+  const hostStartNewTurn = async (drawerIdx = 0, roundNum = 1) => {
     const wordItem = getRandomWord(usedWords);
     setCurrentWordItem(wordItem);
+    setUsedWords(prev => [...prev, wordItem.word]);
     setPublicHint(getWordHint(wordItem.word));
     setPublicCategory(wordItem.category);
-    setUsedWords(prev => [...prev, wordItem.word]);
     setStrokes([]);
     setCorrectGuesserIds([]);
     setTimeLeft(ROUND_TIME_SECONDS);
     setRoundIntermission(false);
     setIsRoundActive(true);
 
-    const activeDrawer = gamePlayers[currentDrawerIndex] || gamePlayers[0];
-    const drawerName = activeDrawer?.name || 'Drawer';
+    const activeDrawer = gamePlayers[drawerIdx] || gamePlayers[0];
+    setCurrentDrawerIndex(drawerIdx);
+    setCurrentDrawerId(activeDrawer.id);
 
-    // If host and Firebase is live: synchronize authoritative turn across all clients
-    if (isFirebaseConfigured() && isHost) {
-      setAuthoritativeTurn(roomCode, {
+    if (isFirebaseConfigured()) {
+      await setAuthoritativeTurn(roomCode, {
         drawerId: activeDrawer.id,
+        drawerIndex: drawerIdx,
         word: wordItem.word,
         category: wordItem.category,
         hint: getWordHint(wordItem.word),
-        round: currentRound
+        round: roundNum,
+        timeLeft: ROUND_TIME_SECONDS
       });
-    }
 
-    const startMsg = {
-      type: 'system',
-      text: `🎨 Round ${currentRound}: ${drawerName} is drawing now!`,
-      isSuccess: false,
-      senderId: 'system',
-      senderName: 'System'
-    };
-
-    if (isFirebaseConfigured()) {
-      sendChatMessage(roomCode, startMsg);
+      await sendChatMessage(roomCode, {
+        type: 'system',
+        text: `🎨 Round ${roundNum}: ${activeDrawer.name} is drawing now!`,
+        isSuccess: false,
+        senderId: 'system',
+        senderName: 'System'
+      });
     } else {
-      setChatMessages(prev => [...prev, startMsg]);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          type: 'system',
+          text: `🎨 Round ${roundNum}: ${activeDrawer.name} is drawing now!`,
+          isSuccess: false
+        }
+      ]);
     }
   };
 
-  // Initial turn mount
+  // Initial turn mount: Host initiates turn 1
   useEffect(() => {
-    startNewTurn();
+    if (isHost || !isFirebaseConfigured()) {
+      hostStartNewTurn(0, 1);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Timer countdown hook
+  // HOST-ONLY: Countdown timer interval
   useEffect(() => {
     if (!isRoundActive || roundIntermission) return;
+    if (!isHost && isFirebaseConfigured()) return; // Non-hosts sync from Firestore
 
     if (timeLeft <= 0) {
-      endTurn();
+      handleEndTurn();
       return;
     }
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {
-        if (prev <= 1) {
+        const nextTime = prev - 1;
+        if (isFirebaseConfigured() && isHost && nextTime % 2 === 0) {
+          // Sync countdown to Firestore every 2s
+          updateRoomCountdown(roomCode, nextTime);
+        }
+        if (nextTime <= 0) {
           clearInterval(timer);
-          endTurn();
+          handleEndTurn();
           return 0;
         }
-        return prev - 1;
+        return nextTime;
       });
     }, 1000);
 
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRoundActive, roundIntermission, timeLeft]);
+  }, [isRoundActive, roundIntermission, timeLeft, isHost]);
 
   // Turn ending logic
-  const endTurn = () => {
+  const handleEndTurn = async () => {
     setIsRoundActive(false);
     setRoundIntermission(true);
     setIntermissionCountdown(4);
+    const wordToReveal = currentWordItem?.word || revealedWord || '??';
+    setRevealedWord(wordToReveal);
 
-    const endMsg = {
-      type: 'system',
-      text: `⏰ Time's up! The secret word was: ${currentWordItem?.word || '??'}`,
-      isSuccess: false,
-      senderId: 'system',
-      senderName: 'System'
-    };
-
-    if (isFirebaseConfigured()) {
-      sendChatMessage(roomCode, endMsg);
-    } else {
-      setChatMessages(prev => [...prev, endMsg]);
+    if (isFirebaseConfigured() && isHost) {
+      await setIntermissionInFirestore(roomCode, wordToReveal);
+      await sendChatMessage(roomCode, {
+        type: 'system',
+        text: `⏰ Time's up! The secret word was: ${wordToReveal}`,
+        isSuccess: false,
+        senderId: 'system',
+        senderName: 'System'
+      });
+    } else if (!isFirebaseConfigured()) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          type: 'system',
+          text: `⏰ Time's up! The secret word was: ${wordToReveal}`,
+          isSuccess: false
+        }
+      ]);
     }
   };
 
-  // Intermission countdown to next turn or game finish
+  // Intermission countdown
   useEffect(() => {
     if (!roundIntermission) return;
 
     if (intermissionCountdown <= 0) {
-      advanceTurn();
+      if (isHost || !isFirebaseConfigured()) {
+        advanceToNextTurn();
+      }
       return;
     }
 
@@ -234,33 +273,122 @@ export default function GameRoom({
 
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundIntermission, intermissionCountdown]);
+  }, [roundIntermission, intermissionCountdown, isHost]);
 
-  // Advance to next turn or next round or finish game
-  const advanceTurn = () => {
-    const nextDrawerIndex = currentDrawerIndex + 1;
+  // HOST-ONLY: Advance to next drawer and round
+  const advanceToNextTurn = async () => {
+    const nextDrawerIdx = currentDrawerIndex + 1;
 
-    // If all players have had a turn to draw in the current round
-    if (nextDrawerIndex >= gamePlayers.length) {
-      if (currentRound >= TOTAL_ROUNDS) {
+    // Check if everyone has had a chance to draw this round
+    if (nextDrawerIdx >= gamePlayers.length) {
+      const nextRoundNum = currentRound + 1;
+      if (nextRoundNum > TOTAL_ROUNDS) {
+        // Game Complete!
+        if (isFirebaseConfigured()) {
+          await endGameInFirestore(roomCode);
+        }
         onGameEnd(gamePlayers);
-        return;
       } else {
-        setCurrentRound(prev => prev + 1);
-        setCurrentDrawerIndex(0);
-        startNewTurn();
+        // Next round: reset drawer to player 0
+        setCurrentRound(nextRoundNum);
+        hostStartNewTurn(0, nextRoundNum);
       }
     } else {
-      setCurrentDrawerIndex(nextDrawerIndex);
-      startNewTurn();
+      // Next drawer within current round
+      hostStartNewTurn(nextDrawerIdx, currentRound);
     }
   };
+
+  // HOST-ONLY: Evaluate all incoming guesses in real time
+  useEffect(() => {
+    if (!isHost && isFirebaseConfigured()) return;
+    if (chatMessages.length === 0 || roundIntermission) return;
+
+    const secret = currentWordItem?.word || '';
+    if (!secret) return;
+
+    const latestMsg = chatMessages[chatMessages.length - 1];
+    if (!latestMsg || latestMsg.type !== 'guess') return;
+
+    // Prevent re-evaluating the same message
+    const msgKey = latestMsg.msgDocId || `${latestMsg.senderId}_${latestMsg.clientTimestamp}_${latestMsg.text}`;
+    if (evaluatedMsgIdsRef.current.has(msgKey)) return;
+    evaluatedMsgIdsRef.current.add(msgKey);
+
+    const guesserId = latestMsg.senderId;
+
+    // Disallow drawer from guessing or duplicate guesses
+    if (guesserId === currentDrawerId || correctGuesserIds.includes(guesserId)) {
+      return;
+    }
+
+    // Check if correct
+    if (isCorrectGuess(latestMsg.text, secret)) {
+      const order = correctGuesserIds.length;
+      const points = calculateGuesserPoints(timeLeft, ROUND_TIME_SECONDS, order);
+      const drawerBonus = calculateDrawerPoints(1);
+
+      if (isFirebaseConfigured()) {
+        awardPlayerScore(roomCode, guesserId, points);
+        awardPlayerScore(roomCode, currentDrawerId, drawerBonus);
+        addCorrectGuesserInFirestore(roomCode, guesserId);
+
+        sendChatMessage(roomCode, {
+          type: 'system',
+          text: `🎉 ${latestMsg.senderName} guessed the word! (+${points} pts)`,
+          isSuccess: true,
+          senderId: 'system',
+          senderName: 'System'
+        });
+      } else {
+        setGamePlayers(prev => 
+          prev.map(p => {
+            if (p.id === guesserId) return { ...p, score: (p.score || 0) + points };
+            if (p.id === currentDrawerId) return { ...p, score: (p.score || 0) + drawerBonus };
+            return p;
+          })
+        );
+        setCorrectGuesserIds(prev => [...prev, guesserId]);
+        setChatMessages(prev => [
+          ...prev,
+          {
+            type: 'system',
+            text: `🎉 ${latestMsg.senderName} guessed the word! (+${points} pts)`,
+            isSuccess: true
+          }
+        ]);
+      }
+
+      // If all guessers have guessed, end turn immediately!
+      const totalGuessersCount = gamePlayers.length - 1;
+      const updatedCount = correctGuesserIds.length + 1;
+      if (updatedCount >= totalGuessersCount && totalGuessersCount > 0) {
+        handleEndTurn();
+      }
+      return;
+    }
+
+    // Check if close guess (1 typo away)
+    if (isCloseGuess(latestMsg.text, secret)) {
+      const closeMsg = {
+        type: 'close',
+        text: `💡 ${latestMsg.senderName}'s guess is very close!`,
+        senderId: 'system',
+        senderName: 'System'
+      };
+
+      if (isFirebaseConfigured()) {
+        sendChatMessage(roomCode, closeMsg);
+      } else {
+        setChatMessages(prev => [...prev, closeMsg]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMessages, isHost, currentWordItem?.word, correctGuesserIds, currentDrawerId, roundIntermission, timeLeft]);
 
   // Drawer creates or updates a stroke
   const handleStrokesChange = (newStrokes) => {
     setStrokes(newStrokes);
-
-    // Send newly completed stroke to Firestore for all other players to see!
     if (isFirebaseConfigured() && newStrokes.length > 0) {
       const latestStroke = newStrokes[newStrokes.length - 1];
       sendStroke(roomCode, latestStroke);
@@ -275,87 +403,14 @@ export default function GameRoom({
     }
   };
 
-  // Generic guess evaluation for any player (human or bot)
-  const processPlayerGuess = (guesser, rawGuess) => {
-    if (!isRoundActive || roundIntermission || !guesser) return;
-    if (!canPlayerGuess(guesser.id, currentDrawer?.id, correctGuesserIds)) return;
+  // Handle human guess input
+  const handleSendGuess = (rawGuess) => {
+    if (isDrawer || hasCurrentUserGuessed || roundIntermission) return;
 
-    const secret = currentWordItem?.word || '';
-
-    // Check correct guess
-    if (isCorrectGuess(rawGuess, secret)) {
-      const order = correctGuesserIds.length;
-      const points = calculateGuesserPoints(timeLeft, ROUND_TIME_SECONDS, order);
-      const drawerBonus = calculateDrawerPoints(1);
-
-      // Award points in Firestore
-      if (isFirebaseConfigured()) {
-        awardPlayerScore(roomCode, guesser.id, points);
-        awardPlayerScore(roomCode, currentDrawer.id, drawerBonus);
-      } else {
-        setGamePlayers(prev => 
-          prev.map(p => {
-            if (p.id === guesser.id) return { ...p, score: (p.score || 0) + points };
-            if (p.id === currentDrawer.id) return { ...p, score: (p.score || 0) + drawerBonus };
-            return p;
-          })
-        );
-      }
-
-      const nextGuesserList = [...correctGuesserIds, guesser.id];
-      setCorrectGuesserIds(nextGuesserList);
-
-      const successMsg = {
-        type: 'system',
-        text: `🎉 ${guesser.name} guessed the word! (+${points} pts)`,
-        isSuccess: true,
-        senderId: 'system',
-        senderName: 'System'
-      };
-
-      if (isFirebaseConfigured()) {
-        sendChatMessage(roomCode, successMsg);
-      } else {
-        setChatMessages(prev => [...prev, successMsg]);
-      }
-
-      // If all other players have guessed correctly, end turn early
-      const totalGuessersCount = gamePlayers.length - 1;
-      if (nextGuesserList.length >= totalGuessersCount && totalGuessersCount > 0) {
-        endTurn();
-      }
-      return;
-    }
-
-    // Check close guess (1 typo away)
-    if (isCloseGuess(rawGuess, secret)) {
-      const guessMsg = {
-        type: 'guess',
-        senderId: guesser.id,
-        senderName: guesser.name,
-        text: rawGuess
-      };
-      const closeMsg = {
-        type: 'close',
-        text: `💡 ${guesser.name}'s guess is very close!`,
-        senderId: 'system',
-        senderName: 'System'
-      };
-
-      if (isFirebaseConfigured()) {
-        sendChatMessage(roomCode, guessMsg);
-        sendChatMessage(roomCode, closeMsg);
-      } else {
-        setChatMessages(prev => [...prev, guessMsg, closeMsg]);
-      }
-      return;
-    }
-
-    // Regular guess
     const normalMsg = {
       type: 'guess',
-      senderId: guesser.id,
-      senderName: guesser.name,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
       text: rawGuess
     };
 
@@ -366,15 +421,10 @@ export default function GameRoom({
     }
   };
 
-  // Handle human guess input
-  const handleSendGuess = (rawGuess) => {
-    processPlayerGuess(currentUser, rawGuess);
-  };
-
-  // BOT AI SIMULATION 1: Progressive drawing when a bot is the active drawer
+  // BOT AI (for solo testing when bots exist)
   useEffect(() => {
     if (!isRoundActive || roundIntermission || !currentWordItem) return;
-    const isBotDrawing = currentDrawer?.id?.startsWith('bot_');
+    const isBotDrawing = currentDrawerId?.startsWith('bot_');
     if (!isBotDrawing) return;
 
     const botStrokes = getBotStrokesForWord(currentWordItem.word, currentWordItem.category);
@@ -394,49 +444,7 @@ export default function GameRoom({
     }, 1400);
 
     return () => clearInterval(drawingInterval);
-  }, [isRoundActive, roundIntermission, currentDrawerIndex, currentWordItem, roomCode]);
-
-  // BOT AI SIMULATION 2: Bots submit guesses when someone else is drawing
-  useEffect(() => {
-    if (!isRoundActive || roundIntermission || !currentWordItem) return;
-
-    const botGuessers = gamePlayers.filter(
-      p => p.id?.startsWith('bot_') && p.id !== currentDrawer?.id && !correctGuesserIds.includes(p.id)
-    );
-    if (botGuessers.length === 0) return;
-
-    const timeouts = [];
-
-    botGuessers.forEach((bot, bIndex) => {
-      // 1. Initial wrong guess after 7-9 seconds
-      const t1 = setTimeout(() => {
-        if (!isRoundActive || roundIntermission) return;
-        const wrongGuess = getBotWrongGuess(currentWordItem.word, currentWordItem.category);
-        processPlayerGuess(bot, wrongGuess);
-      }, 7000 + bIndex * 2000);
-      timeouts.push(t1);
-
-      // 2. Second guess after 15-18 seconds
-      const t2 = setTimeout(() => {
-        if (!isRoundActive || roundIntermission) return;
-        const wrongGuess2 = getBotWrongGuess(currentWordItem.word, currentWordItem.category);
-        processPlayerGuess(bot, wrongGuess2);
-      }, 15000 + bIndex * 2500);
-      timeouts.push(t2);
-
-      // 3. Successful correct guess after 24-28 seconds
-      const t3 = setTimeout(() => {
-        if (!isRoundActive || roundIntermission) return;
-        processPlayerGuess(bot, currentWordItem.word);
-      }, 24000 + bIndex * 3000);
-      timeouts.push(t3);
-    });
-
-    return () => {
-      timeouts.forEach(t => clearTimeout(t));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRoundActive, roundIntermission, currentDrawerIndex, currentWordItem, correctGuesserIds]);
+  }, [isRoundActive, roundIntermission, currentDrawerId, currentWordItem, roomCode]);
 
   return (
     <div className="animate-pop" style={{ width: '100%', maxWidth: '1240px', margin: '0 auto' }}>
@@ -483,7 +491,7 @@ export default function GameRoom({
                   color: 'var(--color-text-main)'
                 }}
               >
-                {currentWordItem?.word || 'Thinking...'}
+                {currentWordItem?.word || 'Loading secret word...'}
               </div>
             </div>
           ) : (
@@ -508,7 +516,6 @@ export default function GameRoom({
 
         {/* Timer & Exit */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* Timer Circle */}
           <div 
             style={{
               display: 'flex',
@@ -554,7 +561,7 @@ export default function GameRoom({
         {/* Left: Scoreboard */}
         <Scoreboard
           players={gamePlayers}
-          currentDrawerId={currentDrawer?.id}
+          currentDrawerId={currentDrawerId}
           currentUserId={currentUser?.id}
           correctGuesserIds={correctGuesserIds}
         />
@@ -575,7 +582,7 @@ export default function GameRoom({
               style={{
                 position: 'absolute',
                 inset: 0,
-                backgroundColor: 'rgba(24, 24, 36, 0.82)',
+                backgroundColor: 'rgba(24, 24, 36, 0.85)',
                 backdropFilter: 'blur(4px)',
                 borderRadius: 'var(--radius-lg)',
                 display: 'flex',
@@ -593,7 +600,7 @@ export default function GameRoom({
                 Round Over!
               </h2>
               <p style={{ fontSize: '1.1rem', color: '#E2E8F0', marginBottom: '1rem' }}>
-                The secret word was <strong style={{ color: '#FFD129', fontSize: '1.4rem' }}>{currentWordItem?.word || '??'}</strong>
+                The secret word was <strong style={{ color: '#FFD129', fontSize: '1.4rem' }}>{revealedWord || currentWordItem?.word || '??'}</strong>
               </p>
               <div 
                 style={{

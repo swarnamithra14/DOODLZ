@@ -14,9 +14,9 @@ import {
   onSnapshot, 
   serverTimestamp, 
   query, 
-  orderBy, 
   limit, 
-  increment 
+  increment,
+  arrayUnion
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase.js';
 
@@ -51,12 +51,10 @@ export function subscribeToStrokes(roomId, onUpdate) {
   }
 
   const strokesColRef = collection(db, 'rooms', roomId, 'strokes');
-  // Order by stroke ID or createdAt to preserve stroke sequence
   const q = query(strokesColRef);
 
   return onSnapshot(q, (snap) => {
     const strokes = snap.docs.map(doc => doc.data());
-    // Sort by stroke id or timestamp
     strokes.sort((a, b) => (a.id > b.id ? 1 : -1));
     onUpdate(strokes);
   }, (err) => {
@@ -116,8 +114,7 @@ export function subscribeToChatMessages(roomId, onUpdate) {
   const q = query(chatColRef, limit(60));
 
   return onSnapshot(q, (snap) => {
-    const messages = snap.docs.map(doc => doc.data());
-    // Sort chronologically
+    const messages = snap.docs.map(doc => ({ ...doc.data(), msgDocId: doc.id }));
     messages.sort((a, b) => (a.clientTimestamp || 0) - (b.clientTimestamp || 0));
     onUpdate(messages);
   }, (err) => {
@@ -130,32 +127,37 @@ export function subscribeToChatMessages(roomId, onUpdate) {
  * Sets drawer, hint, and category publicly on rooms/{roomId},
  * and saves secret word into protected rooms/{roomId}/secret/currentRound.
  * @param {string} roomId 
- * @param {{ drawerId: string, word: string, category: string, hint: string, round: number }} turnData 
+ * @param {{ drawerId: string, drawerIndex: number, word: string, category: string, hint: string, round: number, timeLeft?: number }} turnData 
  */
 export async function setAuthoritativeTurn(roomId, turnData) {
   if (!isFirebaseConfigured() || !db || !roomId) return;
 
   try {
-    // 1. Update public room state (contains hint, drawer, but NEVER the secret word)
-    const roomRef = doc(db, 'rooms', roomId);
-    await updateDoc(roomRef, {
-      currentDrawerId: turnData.drawerId,
-      currentCategory: turnData.category,
-      currentHint: turnData.hint,
-      currentRound: turnData.round,
-      turnStartTime: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-
-    // 2. Clear old strokes for the new turn
+    // 1. Clear old strokes for the new turn
     await clearStrokesInFirestore(roomId);
 
-    // 3. Save secret word in the protected subcollection (accessible ONLY to drawer & host)
+    // 2. Save secret word in the protected subcollection (accessible ONLY to drawer & host)
     const secretRef = doc(db, 'rooms', roomId, 'secret', 'currentRound');
     await setDoc(secretRef, {
       word: turnData.word,
       drawerId: turnData.drawerId,
       category: turnData.category,
+      updatedAt: serverTimestamp()
+    });
+
+    // 3. Update public room state
+    const roomRef = doc(db, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      currentDrawerId: turnData.drawerId,
+      currentDrawerIndex: turnData.drawerIndex,
+      currentCategory: turnData.category,
+      currentHint: turnData.hint,
+      currentRound: turnData.round,
+      timeLeft: turnData.timeLeft || 60,
+      isIntermission: false,
+      revealedWord: '',
+      correctGuesserIds: [],
+      turnStartTime: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
   } catch (err) {
@@ -164,7 +166,82 @@ export async function setAuthoritativeTurn(roomId, turnData) {
 }
 
 /**
- * Drawer subscribes to the protected secret word for the current round.
+ * Host updates countdown on Firestore.
+ * @param {string} roomId 
+ * @param {number} seconds 
+ */
+export async function updateRoomCountdown(roomId, seconds) {
+  if (!isFirebaseConfigured() || !db || !roomId) return;
+
+  try {
+    const roomRef = doc(db, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      timeLeft: seconds
+    });
+  } catch (err) {
+    console.warn('[gameService] Error updating countdown:', err.message);
+  }
+}
+
+/**
+ * Host ends active turn and puts room into intermission state.
+ * @param {string} roomId 
+ * @param {string} word 
+ */
+export async function setIntermissionInFirestore(roomId, word) {
+  if (!isFirebaseConfigured() || !db || !roomId) return;
+
+  try {
+    const roomRef = doc(db, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      isIntermission: true,
+      revealedWord: word,
+      intermissionCountdown: 4,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('[gameService] Error setting intermission:', err.message);
+  }
+}
+
+/**
+ * Host transitions room to final ended status.
+ * @param {string} roomId 
+ */
+export async function endGameInFirestore(roomId) {
+  if (!isFirebaseConfigured() || !db || !roomId) return;
+
+  try {
+    const roomRef = doc(db, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      status: 'ended',
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('[gameService] Error ending game in Firestore:', err.message);
+  }
+}
+
+/**
+ * Adds a player ID to correctGuesserIds in Firestore.
+ * @param {string} roomId 
+ * @param {string} playerId 
+ */
+export async function addCorrectGuesserInFirestore(roomId, playerId) {
+  if (!isFirebaseConfigured() || !db || !roomId || !playerId) return;
+
+  try {
+    const roomRef = doc(db, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      correctGuesserIds: arrayUnion(playerId)
+    });
+  } catch (err) {
+    console.warn('[gameService] Error adding correct guesser:', err.message);
+  }
+}
+
+/**
+ * Drawer or host subscribes to the protected secret word for the current round.
  * @param {string} roomId 
  * @param {(secretData: any) => void} onUpdate 
  * @returns {() => void} Unsubscribe function
@@ -180,7 +257,6 @@ export function subscribeToSecretWord(roomId, onUpdate) {
       onUpdate(snap.data());
     }
   }, (err) => {
-    // Non-drawers will get permission-denied here by design (Security Rules protection)
     console.info('[gameService] Secret word restricted by security rules for guesser.');
   });
 }

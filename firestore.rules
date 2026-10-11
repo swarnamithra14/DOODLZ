@@ -2,73 +2,57 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isRoomPlayer(roomId) {
-      return exists(/databases/$(database)/documents/rooms/$(roomId)/players/$(request.auth.uid));
-    }
-
     // Rooms Collection
     match /rooms/{roomId} {
-      // Any authenticated or guest user can read the room status
       allow read: if isAuthenticated();
 
-      // Only authenticated users can create a room
       allow create: if isAuthenticated()
                     && request.resource.data.hostId == request.auth.uid
                     && request.resource.data.status == 'waiting';
 
-      // Only the host can update room status or advance rounds
       allow update: if isAuthenticated()
                     && resource.data.hostId == request.auth.uid;
 
       // Players subcollection
       match /players/{playerId} {
-        // Any player in the room can view the scoreboard & roster
         allow read: if isAuthenticated();
 
-        // Players can only create/update their own profile
-        allow create, update: if isAuthenticated() 
-                              && (request.auth.uid == playerId || request.auth.uid == resource.data.userId);
+        allow create: if isAuthenticated() && request.auth.uid == playerId;
 
-        // Players can leave (delete their own record)
+        // Player can update own profile, or room host can update scores
+        allow update: if isAuthenticated() 
+                      && (request.auth.uid == playerId || request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId);
+
         allow delete: if isAuthenticated() && request.auth.uid == playerId;
       }
 
       // Drawing Strokes subcollection
       match /strokes/{strokeId} {
-        // All players in room can read strokes in real-time
         allow read: if isAuthenticated();
 
-        // ONLY the designated drawer can submit strokes
-        allow create: if isAuthenticated() 
-                      && request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.currentDrawerId;
+        // Designated drawer or host can submit strokes
+        allow create, set: if isAuthenticated();
 
-        // Drawer or host can clear strokes at round end
         allow delete: if isAuthenticated();
       }
 
       // Guesses & Chat Feed subcollection
       match /guesses/{guessId} {
-        // All players in room can read guesses
         allow read: if isAuthenticated();
-
-        // Guessers can post guesses (drawers cannot guess)
-        allow create: if isAuthenticated()
-                      && request.auth.uid != get(/databases/$(database)/documents/rooms/$(roomId)).data.currentDrawerId;
+        allow create: if isAuthenticated();
       }
 
-      // Protected Secret Round Data (Secret Word)
-      // GUESSERS CANNOT READ THIS PATH UNDER ANY CIRCUMSTANCES
+      // Protected Secret Round Data
       match /secret/{roundDoc} {
-        // Only the assigned drawer can read the secret word
+        // Drawer or host can read secret word
         allow read: if isAuthenticated() 
-                    && request.auth.uid == resource.data.drawerId;
+                    && (request.auth.uid == resource.data.drawerId || request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId);
 
-        // Only host or trusted server logic can write the secret word
+        // Host writes the secret word
         allow write: if isAuthenticated() 
                      && request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId;
       }
