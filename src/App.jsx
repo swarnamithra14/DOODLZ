@@ -3,13 +3,16 @@ import Navbar from './components/Navbar.jsx';
 import HowToPlayModal from './components/HowToPlayModal.jsx';
 import Home from './pages/Home.jsx';
 import Lobby from './pages/Lobby.jsx';
-import { generateRoomCode, AVATAR_OPTIONS } from './utils/roomCode.js';
+import GameRoom from './pages/GameRoom.jsx';
+import Results from './pages/Results.jsx';
+import { generateRoomCode } from './utils/roomCode.js';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'lobby' | 'game'
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'lobby' | 'game' | 'results'
   const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [room, setRoom] = useState(null);
+  const [finalPlayers, setFinalPlayers] = useState([]);
 
   // Handle Room Creation
   const handleCreateRoom = ({ name, avatar }) => {
@@ -19,7 +22,8 @@ export default function App() {
       id: userId,
       name,
       avatar,
-      isHost: true
+      isHost: true,
+      score: 0
     };
 
     setCurrentUser(user);
@@ -38,7 +42,8 @@ export default function App() {
       id: userId,
       name,
       avatar,
-      isHost: false
+      isHost: false,
+      score: 0
     };
 
     setCurrentUser(user);
@@ -52,7 +57,8 @@ export default function App() {
           id: 'host_default',
           name: 'Room Host 👑',
           avatar: '🎨',
-          isHost: true
+          isHost: true,
+          score: 0
         },
         user
       ]
@@ -64,6 +70,7 @@ export default function App() {
   const handleLeaveRoom = () => {
     setRoom(null);
     setCurrentUser(null);
+    setFinalPlayers([]);
     setCurrentScreen('home');
   };
 
@@ -79,7 +86,8 @@ export default function App() {
       id: 'bot_' + Math.random().toString(36).substring(2, 9),
       name: randomName,
       avatar: randomAvatar,
-      isHost: false
+      isHost: false,
+      score: 0
     };
 
     setRoom((prev) => ({
@@ -88,8 +96,28 @@ export default function App() {
     }));
   };
 
+  // Start the playable GameRoom
   const handleStartGame = () => {
-    alert('Game starting! Local playable game engine is being wired in Phase 2.');
+    setCurrentScreen('game');
+  };
+
+  // Game concludes after all rounds
+  const handleGameEnd = (finishedPlayers) => {
+    setFinalPlayers(finishedPlayers);
+    setCurrentScreen('results');
+  };
+
+  // Play Again: reset player scores and return to Lobby
+  const handlePlayAgain = () => {
+    if (room) {
+      setRoom(prev => ({
+        ...prev,
+        players: prev.players.map(p => ({ ...p, score: 0 }))
+      }));
+      setCurrentScreen('lobby');
+    } else {
+      setCurrentScreen('home');
+    }
   };
 
   return (
@@ -114,6 +142,25 @@ export default function App() {
             onStartGame={handleStartGame}
             onLeaveRoom={handleLeaveRoom}
             onSimulateJoin={handleSimulateJoin}
+          />
+        )}
+
+        {currentScreen === 'game' && room && (
+          <GameRoom
+            roomCode={room.code}
+            currentUser={currentUser}
+            players={room.players}
+            onGameEnd={handleGameEnd}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        )}
+
+        {currentScreen === 'results' && (
+          <Results
+            players={finalPlayers.length > 0 ? finalPlayers : room?.players || []}
+            currentUser={currentUser}
+            onPlayAgain={handlePlayAgain}
+            onReturnHome={handleLeaveRoom}
           />
         )}
       </main>
