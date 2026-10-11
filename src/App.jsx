@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar.jsx';
 import HowToPlayModal from './components/HowToPlayModal.jsx';
+import BackendStatusModal from './components/BackendStatusModal.jsx';
 import Home from './pages/Home.jsx';
 import Lobby from './pages/Lobby.jsx';
 import GameRoom from './pages/GameRoom.jsx';
@@ -10,6 +11,7 @@ import { generateRoomCode } from './utils/roomCode.js';
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'lobby' | 'game' | 'results'
   const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
+  const [isBackendStatusOpen, setIsBackendStatusOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [room, setRoom] = useState(null);
   const [finalPlayers, setFinalPlayers] = useState([]);
@@ -122,7 +124,10 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <Navbar onOpenHowToPlay={() => setIsHowToPlayOpen(true)} />
+      <Navbar 
+        onOpenHowToPlay={() => setIsHowToPlayOpen(true)}
+        onOpenBackendStatus={() => setIsBackendStatusOpen(true)}
+      />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         {currentScreen === 'home' && (
@@ -165,10 +170,15 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent How To Play Dialog */}
+      {/* Modals */}
       <HowToPlayModal 
         isOpen={isHowToPlayOpen} 
         onClose={() => setIsHowToPlayOpen(false)} 
+      />
+
+      <BackendStatusModal
+        isOpen={isBackendStatusOpen}
+        onClose={() => setIsBackendStatusOpen(false)}
       />
     </div>
   );

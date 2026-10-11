@@ -3,8 +3,8 @@
  * Configured via Vite environment variables (VITE_FIREBASE_*).
  */
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getFirestore, collection, getDocs, limit, query } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -61,6 +61,51 @@ if (isFirebaseConfigured()) {
     console.info(
       '[Firebase] Environment variables not configured or using placeholders. Running in offline/local simulator mode. See FIREBASE_SETUP.md for details.'
     );
+  }
+}
+
+/**
+ * Tests live connection to Firebase Auth & Firestore.
+ * Performs an anonymous auth ping and a simple Firestore read.
+ * @returns {Promise<{ success: boolean, configured: boolean, message: string, details?: any }>}
+ */
+export async function testFirebaseConnection() {
+  if (!isFirebaseConfigured()) {
+    return {
+      success: false,
+      configured: false,
+      message: 'Firebase is not yet configured. Environment variables in .env.local are missing or using placeholders.'
+    };
+  }
+
+  try {
+    // 1. Check anonymous auth
+    let userId = auth?.currentUser?.uid;
+    if (!userId && auth) {
+      const cred = await signInAnonymously(auth);
+      userId = cred.user.uid;
+    }
+
+    // 2. Perform a test ping against Firestore
+    const q = query(collection(db, 'rooms'), limit(1));
+    await getDocs(q);
+
+    return {
+      success: true,
+      configured: true,
+      message: `Connected successfully to Firebase project "${firebaseConfig.projectId}"!`,
+      details: {
+        projectId: firebaseConfig.projectId,
+        userId: userId || 'anonymous'
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      configured: true,
+      message: `Firebase error: ${error.message}`,
+      error
+    };
   }
 }
 
