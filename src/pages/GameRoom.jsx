@@ -3,6 +3,7 @@ import DrawingCanvas from '../components/DrawingCanvas.jsx';
 import Scoreboard from '../components/Scoreboard.jsx';
 import GuessPanel from '../components/GuessPanel.jsx';
 import { getRandomWord, getWordHint, getWordLengthDescription, isCloseGuess } from '../game/wordUtils.js';
+import { getBotStrokesForWord, getBotWrongGuess } from '../game/botAI.js';
 import { 
   ROUND_TIME_SECONDS, 
   isCorrectGuess, 
@@ -154,11 +155,10 @@ export default function GameRoom({
     }
   };
 
-  // Handle incoming guess from player
-  const handleSendGuess = (rawGuess) => {
-    if (!isRoundActive || !canPlayerGuess(currentUser?.id, currentDrawer?.id, correctGuesserIds)) {
-      return;
-    }
+  // Generic guess evaluation for any player (human or bot)
+  const processPlayerGuess = (guesser, rawGuess) => {
+    if (!isRoundActive || roundIntermission || !guesser) return;
+    if (!canPlayerGuess(guesser.id, currentDrawer?.id, correctGuesserIds)) return;
 
     const secret = currentWordItem?.word || '';
 
@@ -171,7 +171,7 @@ export default function GameRoom({
       // Update guesser's score and drawer's score
       setGamePlayers(prev => 
         prev.map(p => {
-          if (p.id === currentUser.id) {
+          if (p.id === guesser.id) {
             return { ...p, score: (p.score || 0) + points };
           }
           if (p.id === currentDrawer.id) {
@@ -181,19 +181,19 @@ export default function GameRoom({
         })
       );
 
-      const nextGuesserList = [...correctGuesserIds, currentUser.id];
+      const nextGuesserList = [...correctGuesserIds, guesser.id];
       setCorrectGuesserIds(nextGuesserList);
 
       setChatMessages(prev => [
         ...prev,
         {
           type: 'system',
-          text: `🎉 ${currentUser.name} guessed the word! (+${points} pts)`,
+          text: `🎉 ${guesser.name} guessed the word! (+${points} pts)`,
           isSuccess: true
         }
       ]);
 
-      // If all guessers have guessed correctly, end turn early
+      // If all other players have guessed correctly, end turn early
       const totalGuessersCount = gamePlayers.length - 1;
       if (nextGuesserList.length >= totalGuessersCount && totalGuessersCount > 0) {
         endTurn();
@@ -207,13 +207,13 @@ export default function GameRoom({
         ...prev,
         {
           type: 'guess',
-          senderId: currentUser.id,
-          senderName: currentUser.name,
+          senderId: guesser.id,
+          senderName: guesser.name,
           text: rawGuess
         },
         {
           type: 'close',
-          text: `💡 ${currentUser.name}'s guess is very close!`
+          text: `💡 ${guesser.name}'s guess is very close!`
         }
       ]);
       return;
@@ -224,12 +224,83 @@ export default function GameRoom({
       ...prev,
       {
         type: 'guess',
-        senderId: currentUser.id,
-        senderName: currentUser.name,
+        senderId: guesser.id,
+        senderName: guesser.name,
         text: rawGuess
       }
     ]);
   };
+
+  // Handle human guess input
+  const handleSendGuess = (rawGuess) => {
+    processPlayerGuess(currentUser, rawGuess);
+  };
+
+  // BOT AI SIMULATION 1: Progressive drawing when a bot is the active drawer
+  useEffect(() => {
+    if (!isRoundActive || roundIntermission || !currentWordItem) return;
+    const isBotDrawing = currentDrawer?.id?.startsWith('bot_');
+    if (!isBotDrawing) return;
+
+    const botStrokes = getBotStrokesForWord(currentWordItem.word, currentWordItem.category);
+    let strokeIndex = 0;
+
+    // Draw strokes step-by-step every 1.4 seconds so guessers can watch in real time
+    const drawingInterval = setInterval(() => {
+      if (strokeIndex < botStrokes.length) {
+        const nextStroke = botStrokes[strokeIndex];
+        setStrokes(prev => [...prev, nextStroke]);
+        strokeIndex++;
+      } else {
+        clearInterval(drawingInterval);
+      }
+    }, 1400);
+
+    return () => clearInterval(drawingInterval);
+  }, [isRoundActive, roundIntermission, currentDrawerIndex, currentWordItem]);
+
+  // BOT AI SIMULATION 2: Bots submit guesses when someone else is drawing
+  useEffect(() => {
+    if (!isRoundActive || roundIntermission || !currentWordItem) return;
+
+    // Identify active bot guessers
+    const botGuessers = gamePlayers.filter(
+      p => p.id?.startsWith('bot_') && p.id !== currentDrawer?.id && !correctGuesserIds.includes(p.id)
+    );
+    if (botGuessers.length === 0) return;
+
+    const timeouts = [];
+
+    botGuessers.forEach((bot, bIndex) => {
+      // 1. Initial wrong guess after 7-9 seconds
+      const t1 = setTimeout(() => {
+        if (!isRoundActive || roundIntermission) return;
+        const wrongGuess = getBotWrongGuess(currentWordItem.word, currentWordItem.category);
+        processPlayerGuess(bot, wrongGuess);
+      }, 7000 + bIndex * 2000);
+      timeouts.push(t1);
+
+      // 2. Second guess after 15-18 seconds
+      const t2 = setTimeout(() => {
+        if (!isRoundActive || roundIntermission) return;
+        const wrongGuess2 = getBotWrongGuess(currentWordItem.word, currentWordItem.category);
+        processPlayerGuess(bot, wrongGuess2);
+      }, 15000 + bIndex * 2500);
+      timeouts.push(t2);
+
+      // 3. Successful correct guess after 24-28 seconds!
+      const t3 = setTimeout(() => {
+        if (!isRoundActive || roundIntermission) return;
+        processPlayerGuess(bot, currentWordItem.word);
+      }, 24000 + bIndex * 3000);
+      timeouts.push(t3);
+    });
+
+    return () => {
+      timeouts.forEach(t => clearTimeout(t));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRoundActive, roundIntermission, currentDrawerIndex, currentWordItem, correctGuesserIds]);
 
   return (
     <div className="animate-pop" style={{ width: '100%', maxWidth: '1240px', margin: '0 auto' }}>
