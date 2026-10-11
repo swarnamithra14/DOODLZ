@@ -212,3 +212,18 @@ body {
   background-color: var(--color-accent-green);
   color: #FFFFFF;
 }
+
+/* Game Room Responsive Layout */
+.game-room-layout {
+  display: grid;
+  grid-template-columns: 230px 1fr 280px;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .game-room-layout {
+    grid-template-columns: 1fr;
+  }
+}
+

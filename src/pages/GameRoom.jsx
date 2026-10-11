@@ -547,15 +547,8 @@ export default function GameRoom({
         </div>
       </div>
 
-      {/* Main Game Screen 3-Column Layout */}
-      <div 
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '230px 1fr 280px',
-          gap: '1rem',
-          alignItems: 'start'
-        }}
-      >
+      {/* Main Game Screen Responsive Layout */}
+      <div className="game-room-layout">
         {/* Left: Scoreboard */}
         <Scoreboard
           players={gamePlayers}
